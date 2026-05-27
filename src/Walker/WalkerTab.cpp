@@ -1,6 +1,6 @@
 #include "WalkerTab.h"
-#include "../Functions/MemoryFunctions.h"
-#include "../Functions/GeneralFunctions.h"
+#include "../Functions/Memory.h"
+#include "../Core/Addresses.h"
 #include <QGridLayout>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -8,6 +8,7 @@
 #include <QPushButton>
 #include <QRadioButton>
 #include <QIcon>
+#include <QShowEvent>
 
 WalkerTab::WalkerTab(QWidget* parent) : QWidget(parent) {
     setWindowIcon(QIcon("Icon.ico"));
@@ -69,7 +70,6 @@ WalkerTab::WalkerTab(QWidget* parent) : QWidget(parent) {
     connect(add_wpt_btn, &QPushButton::clicked, this, &WalkerTab::add_waypoint);
 
     connect(interval_slider, &QSlider::valueChanged, this, &WalkerTab::update_interval_label);
-    connect(record_cb, &QCheckBox::stateChanged, this, &WalkerTab::start_record_thread);
 
     right_vl->addWidget(dir_gb);
     right_vl->addWidget(act_gb);
@@ -96,24 +96,29 @@ WalkerTab::WalkerTab(QWidget* parent) : QWidget(parent) {
     bl_vl->addLayout(bl_btns);
     bl_vl->addWidget(blacklist_widget);
     bl_vl->addWidget(pos_label);
-    connect(blacklist_widget, &QListWidget::itemDoubleClicked, [this](QListWidgetItem* item) {
-        GeneralFunctions::delete_item(blacklist_widget, item);
-    });
     grid->addWidget(bl_gb, 0, 2, 2, 1);
 
     grid->addWidget(status_label, 2, 0, 1, 2);
 
-    connect(waypoint_list, &QListWidget::itemDoubleClicked, [this](QListWidgetItem* item) {
-        GeneralFunctions::delete_item(waypoint_list, item);
-    });
 
     pos_timer = new QTimer(this);
     connect(pos_timer, &QTimer::timeout, this, &WalkerTab::update_position);
+}
+
+void WalkerTab::showEvent(QShowEvent* event) {
+    QWidget::showEvent(event);
     pos_timer->start(500);
 }
 
+void WalkerTab::hideEvent(QHideEvent* event) {
+    QWidget::hideEvent(event);
+    pos_timer->stop();
+}
+
 void WalkerTab::add_waypoint() {
-    auto [x, y, z] = MemoryFunctions::read_my_wpt();
+    int x = static_cast<int>(Memory::read(Addresses::my_x_address, Addresses::my_x_address_offset).value_or(0));
+    int y = static_cast<int>(Memory::read(Addresses::my_y_address, Addresses::my_y_address_offset).value_or(0));
+    int z = static_cast<int>(Memory::read(Addresses::my_z_address, Addresses::my_z_address_offset).value_or(0));
     int act = act_group->checkedId();
     int dir = dir_group->checkedId();
     QVariantMap data;
@@ -160,65 +165,14 @@ std::set<std::tuple<int,int,int>> WalkerTab::get_blacklist() const {
     return s;
 }
 
-void WalkerTab::start_walker_thread(int state) {
-    if (state == Qt::Checked) {
-        if (walker_thread) { walker_thread->stop(); walker_thread->wait(2000); }
-        std::vector<PathfindingFunctions::Waypoint> wpts;
-        for (int i = 0; i < waypoint_list->count(); i++) {
-            QVariantMap j = waypoint_list->item(i)->data(Qt::UserRole).toMap();
-            wpts.push_back({j["X"].toInt(), j["Y"].toInt(), j["Z"].toInt(), j["Action"].toInt(), j["Direction"].toInt()});
-        }
-        if (wpts.empty()) return;
-        walker_thread = new WalkerThread(wpts, this);
-        connect(walker_thread, &WalkerThread::index_update, [this](int opt, int val) {
-            if (opt == 0) waypoint_list->setCurrentRow(val);
-        });
-        walker_thread->start();
-    } else {
-        if (walker_thread) { walker_thread->stop(); walker_thread->wait(2000); walker_thread = nullptr; }
-    }
-}
-
-void WalkerTab::start_record_thread(int state) {
-    if (state == Qt::Checked) {
-        if (record_thread) { record_thread->stop(); record_thread->wait(2000); }
-        record_thread = new RecordThread(interval_slider->value(), this);
-        connect(record_thread, &RecordThread::wpt_recorded, this, &WalkerTab::on_waypoint_recorded);
-        if (sync_timer) sync_timer->stop();
-        sync_timer = new QTimer(this);
-        connect(sync_timer, &QTimer::timeout, [this]() {
-            if (!record_thread) return;
-            int did = dir_group->checkedId();
-            auto* btn = dir_group->button(did);
-            QString dt = btn ? btn->text() : "Center";
-            if (dt == "C") dt = "Center";
-            record_thread->update_snapshot(act_group->checkedId(), did, dt.toStdString());
-        });
-        sync_timer->start(200);
-        record_thread->start();
-    } else {
-        if (record_thread) { record_thread->stop(); record_thread->wait(2000); record_thread = nullptr; }
-        if (sync_timer) sync_timer->stop();
-    }
-}
-
-void WalkerTab::on_waypoint_recorded(int x, int y, int z, int action, int direction, QString display) {
-    static const QStringList act_names = {"Stand","Rope","Shovel","Ladder","Lure"};
-    QString lbl = QString("%1: %2 %3 %4 %5").arg(action < act_names.size() ? act_names[action] : "?")
-        .arg(x).arg(y).arg(z).arg(display);
-    QVariantMap data;
-    data["X"]=x; data["Y"]=y; data["Z"]=z; data["Action"]=action; data["Direction"]=direction;
-    auto* item = new QListWidgetItem(lbl);
-    item->setData(Qt::UserRole, data);
-    waypoint_list->addItem(item);
-    waypoint_list->scrollToBottom();
-}
 
 void WalkerTab::update_position() {
-    try {
-        auto [x, y, z] = MemoryFunctions::read_my_wpt();
-        pos_label->setText(QString("Current Pos: %1, %2, %3").arg(x).arg(y).arg(z));
-    } catch (...) {
+    auto x = Memory::read(Addresses::my_x_address, Addresses::my_x_address_offset);
+    auto y = Memory::read(Addresses::my_y_address, Addresses::my_y_address_offset);
+    auto z = Memory::read(Addresses::my_z_address, Addresses::my_z_address_offset);
+    if (x && y && z) {
+        pos_label->setText(QString("Current Pos: %1, %2, %3").arg(*x).arg(*y).arg(*z));
+    } else {
         pos_label->setText("Current Pos: -, -, -");
     }
 }
@@ -227,7 +181,3 @@ void WalkerTab::update_interval_label(int val) {
     interval_label->setText(QString("Record every: %1 %2").arg(val).arg(val == 1 ? "square" : "squares"));
 }
 
-void WalkerTab::stop_all_threads() {
-    start_walker_thread(Qt::Unchecked);
-    start_record_thread(Qt::Unchecked);
-}

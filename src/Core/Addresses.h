@@ -9,6 +9,8 @@ namespace Addresses {
 
     constexpr int TITLE_BAR_OFFSET = 35;
 
+    extern int log_level;
+
     extern std::mutex walker_Lock;
     extern std::mutex attack_Lock;
 
@@ -55,6 +57,19 @@ namespace Addresses {
 
     extern uintptr_t target_name_offset;
     extern int target_name_type;
+
+    extern uintptr_t creature_base_address;
+    extern std::vector<uintptr_t> creature_base_offset;
+    extern uintptr_t creature_x_off;
+    extern uintptr_t creature_y_off;
+    extern uintptr_t creature_z_off;
+    extern uintptr_t creature_name_len_off;
+    extern uintptr_t creature_name_off;
+    extern bool      creature_name_is_unicode;
+    extern bool      creature_name_is_ptr;
+    extern uintptr_t creature_found_address;
+    extern uint32_t  creature_id_prefix;
+    extern uint32_t  creature_id_prefix_div;
 
     extern std::string game_name;
     extern HWND game;

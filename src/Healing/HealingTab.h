@@ -4,27 +4,11 @@
 #include <QComboBox>
 #include <QLineEdit>
 #include <QLabel>
-#include "HealingThread.h"
-
-class CoordTrackerThread : public QThread {
-    Q_OBJECT
-public:
-    explicit CoordTrackerThread(QObject* parent = nullptr);
-    void stop();
-signals:
-    void position_updated(int x, int y);
-protected:
-    void run() override;
-private:
-    bool running = true;
-};
 
 class HealingTab : public QWidget {
     Q_OBJECT
 public:
     explicit HealingTab(QWidget* parent = nullptr);
-    void start_thread(int state);
-    void stop_all_threads();
 private slots:
     void add_spell();
     void add_item();
@@ -35,11 +19,7 @@ private slots:
     void move_item_down();
     void remove_item();
     void on_item_key_changed(const QString& text);
-    void update_coord_placeholder(int x, int y);
 private:
-    HealThread*         heal_thread  = nullptr;
-    CoordTrackerThread* coord_thread = nullptr;
-
     QListWidget* spell_list;
     QComboBox*   spell_when_cb;
     QComboBox*   spell_is_cb;

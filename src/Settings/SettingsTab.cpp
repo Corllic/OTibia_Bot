@@ -1,5 +1,4 @@
 #include "SettingsTab.h"
-#include "../Functions/GeneralFunctions.h"
 #include "../Core/Addresses.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -7,9 +6,7 @@
 #include <QPushButton>
 #include <QIcon>
 #include <QScrollArea>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QFile>
+#include <QSettings>
 
 SettingsTab::SettingsTab(QWidget* parent) : QWidget(parent) {
     setWindowIcon(QIcon("Icon.ico"));
@@ -79,12 +76,12 @@ SettingsTab::SettingsTab(QWidget* parent) : QWidget(parent) {
         auto* h_addrs = new QLabel("Address");
         h_addrs->setAlignment(Qt::AlignCenter);
         h_addrs->setStyleSheet("font-weight: bold;");
-        auto* h_off  = new QLabel("Offset");
+        auto* h_off = new QLabel("Offset");
         h_off->setAlignment(Qt::AlignCenter);
         h_off->setStyleSheet("font-weight: bold;");
         gl->addWidget(new QLabel(""), 0, 0);
         gl->addWidget(h_addrs, 0, 1);
-        gl->addWidget(h_off,  0, 2);
+        gl->addWidget(h_off,   0, 2);
         for (int r = 0; r < (int)(sizeof(player_rows)/sizeof(player_rows[0])); r++)
             add_addr_row(gl, r + 1, player_rows[r].lbl, player_rows[r].key);
         scroll_vl->addWidget(gb);
@@ -106,10 +103,12 @@ SettingsTab::SettingsTab(QWidget* parent) : QWidget(parent) {
         auto* h_addrs = new QLabel("Address");
         h_addrs->setAlignment(Qt::AlignCenter);
         h_addrs->setStyleSheet("font-weight: bold;");
-        auto* h_off  = new QLabel("Offset");  h_off->setAlignment(Qt::AlignCenter);  h_off->setStyleSheet("font-weight: bold;");
+        auto* h_off = new QLabel("Offset");
+        h_off->setAlignment(Qt::AlignCenter);
+        h_off->setStyleSheet("font-weight: bold;");
         gl->addWidget(new QLabel(""), 0, 0);
         gl->addWidget(h_addrs, 0, 1);
-        gl->addWidget(h_off,  0, 2);
+        gl->addWidget(h_off,   0, 2);
         for (int r = 0; r < (int)(sizeof(target_rows)/sizeof(target_rows[0])); r++)
             add_addr_row(gl, r + 1, target_rows[r].lbl, target_rows[r].key);
         scroll_vl->addWidget(gb);
@@ -141,51 +140,40 @@ void SettingsTab::add_addr_row(QGridLayout* gl, int row, const QString& label, c
 }
 
 void SettingsTab::save_addresses() {
-    try {
-        QJsonObject game_cfg;
-        game_cfg["square_size"] = square_size_edit->text();
-        game_cfg["attack_key"]  = attack_key_combo->currentIndex() + 1;
-        game_cfg["walk_mode"]   = walk_mode_combo->currentIndex();
+    QSettings s("EasyBot", "Addresses");
 
-        QJsonObject data;
-        data["game_config"] = game_cfg;
+    s.beginGroup("game_config");
+    s.setValue("square_size", square_size_edit->text());
+    s.setValue("attack_key",  attack_key_combo->currentIndex() + 1);
+    s.setValue("walk_mode",   walk_mode_combo->currentIndex());
+    s.endGroup();
 
-        for (auto& [key, w] : address_widgets) {
-            QJsonObject entry;
-            entry["address"] = w.addr->text();
-            entry["offset"]  = w.offset->text();
-            data[QString::fromStdString(key)] = entry;
-        }
-
-        GeneralFunctions::manage_profile("save", "Save/Settings", "addresses", data);
-        Addresses::load_custom_addresses();
-        status_label->setText("Addresses saved and reloaded!");
-    } catch (const std::exception& e) {
-        status_label->setText(QString("Error: %1").arg(e.what()));
+    for (auto& [key, w] : address_widgets) {
+        s.beginGroup(QString::fromStdString(key));
+        s.setValue("address", w.addr->text());
+        s.setValue("offset",  w.offset->text());
+        s.endGroup();
     }
+
+    Addresses::load_custom_addresses();
+    status_label->setText("Addresses saved and reloaded!");
 }
 
 void SettingsTab::load_addresses() {
-    QFile f("Save/Settings/addresses.json");
-    if (!f.open(QIODevice::ReadOnly)) return;
-    QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
-    if (doc.isNull()) return;
-    QJsonObject data = doc.object();
+    QSettings s("EasyBot", "Addresses");
 
-    if (data.contains("game_config")) {
-        QJsonObject cfg = data["game_config"].toObject();
-        square_size_edit->setText(cfg.value("square_size").toString("75"));
-        int ak = cfg.value("attack_key").toInt(1);
-        if (ak >= 1 && ak <= 12) attack_key_combo->setCurrentIndex(ak - 1);
-        walk_mode_combo->setCurrentIndex(cfg.value("walk_mode").toInt(0));
-    }
+    s.beginGroup("game_config");
+    square_size_edit->setText(s.value("square_size", "75").toString());
+    int ak = s.value("attack_key", 1).toInt();
+    if (ak >= 1 && ak <= 12) attack_key_combo->setCurrentIndex(ak - 1);
+    walk_mode_combo->setCurrentIndex(s.value("walk_mode", 0).toInt());
+    s.endGroup();
+
     for (auto& [key, w] : address_widgets) {
-        QString qkey = QString::fromStdString(key);
-        if (data.contains(qkey)) {
-            QJsonObject e = data[qkey].toObject();
-            w.addr->setText(e.value("address").toString());
-            w.offset->setText(e.value("offset").toString());
-        }
+        s.beginGroup(QString::fromStdString(key));
+        w.addr->setText(s.value("address").toString());
+        w.offset->setText(s.value("offset").toString());
+        s.endGroup();
     }
 }
 

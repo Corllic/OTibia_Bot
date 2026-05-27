@@ -1,6 +1,5 @@
 #include "HealingTab.h"
 
-#include "../Core/Addresses.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGridLayout>
@@ -8,23 +7,10 @@
 #include <QPushButton>
 #include <QIcon>
 
-#include <windows.h>
-
-CoordTrackerThread::CoordTrackerThread(QObject* parent) : QThread(parent) {}
-void CoordTrackerThread::stop() { running = false; }
-void CoordTrackerThread::run() {
-    while (running) {
-        POINT pt; GetCursorPos(&pt);
-        POINT cp = pt; ScreenToClient(Addresses::game, &cp);
-        emit position_updated(cp.x, cp.y);
-        QThread::msleep(50);
-    }
-}
-
 HealingTab::HealingTab(QWidget* parent) : QWidget(parent) {
     setWindowIcon(QIcon("Icon.ico"));
     setWindowTitle("Healing");
-    setFixedSize(300, 400);
+    setFixedWidth(350);
 
     auto* root_vl = new QVBoxLayout(this);
     root_vl->setSpacing(4);
@@ -42,7 +28,8 @@ HealingTab::HealingTab(QWidget* parent) : QWidget(parent) {
         spell_when_cb->addItems({"Current Mana","Current Health","Mana Percent","Health Percent"});
         spell_is_cb = new QComboBox(this);
         spell_is_cb->addItems({"Below","Above","Equal To"});
-        spell_val_edit = new QLineEdit(this); spell_val_edit->setPlaceholderText("Value");
+        spell_val_edit = new QLineEdit(this);
+        spell_val_edit->setPlaceholderText("Value");
 
         spell_cost_edit = new QLineEdit(this); spell_cost_edit->setPlaceholderText("MP Cost");
         spell_key_cb = new QComboBox(this);
@@ -129,22 +116,10 @@ void HealingTab::on_item_key_changed(const QString& text) {
     bool coords = (text == "Coordinates");
     item_x_edit->setEnabled(coords);
     item_y_edit->setEnabled(coords);
-    if (coords) {
-        if (!coord_thread || !coord_thread->isRunning()) {
-            coord_thread = new CoordTrackerThread(this);
-            connect(coord_thread, &CoordTrackerThread::position_updated, this, &HealingTab::update_coord_placeholder);
-            coord_thread->start();
-        }
-    } else {
-        if (coord_thread && coord_thread->isRunning()) { coord_thread->stop(); coord_thread->wait(500); }
+    if (!coords) {
         item_x_edit->setPlaceholderText("X");
         item_y_edit->setPlaceholderText("Y");
     }
-}
-
-void HealingTab::update_coord_placeholder(int x, int y) {
-    item_x_edit->setPlaceholderText(QString::number(x));
-    item_y_edit->setPlaceholderText(QString::number(y));
 }
 
 static QString make_spell_label(const QString& when, const QString& is, const QString& val,
@@ -213,24 +188,3 @@ void HealingTab::move_item_up()    { move_up(item_list); }
 void HealingTab::move_item_down()  { move_down(item_list); }
 void HealingTab::remove_item()     { remove_sel(item_list); }
 
-static std::vector<QVariantMap> list_to_vec(QListWidget* lw) {
-    std::vector<QVariantMap> v;
-    for (int i = 0; i < lw->count(); i++)
-        v.push_back(lw->item(i)->data(Qt::UserRole).toMap());
-    return v;
-}
-
-void HealingTab::start_thread(int state) {
-    if (state == Qt::Checked) {
-        if (heal_thread) { heal_thread->stop(); heal_thread->wait(2000); }
-        heal_thread = new HealThread(list_to_vec(spell_list), list_to_vec(item_list), this);
-        heal_thread->start();
-    } else {
-        if (heal_thread) { heal_thread->stop(); heal_thread->wait(2000); heal_thread = nullptr; }
-    }
-}
-
-void HealingTab::stop_all_threads() {
-    start_thread(Qt::Unchecked);
-    if (coord_thread && coord_thread->isRunning()) { coord_thread->stop(); coord_thread->wait(500); }
-}

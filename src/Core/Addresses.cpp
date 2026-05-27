@@ -1,16 +1,17 @@
 #include "Addresses.h"
+#include "Logger.h"
 #include <windows.h>
 #include <psapi.h>
-#include <fstream>
 #include <sstream>
-#include <filesystem>
-#include <iostream>
-#include <QFile>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QJsonArray>
+#include <QSettings>
 
 namespace Addresses {
+
+    // 0 → No logs
+    // 1 → Console
+    // 2 → File logs.txt
+    // 3 → Console + File
+    int log_level = 1;
 
     std::mutex walker_Lock;
     std::mutex attack_Lock;
@@ -66,6 +67,19 @@ namespace Addresses {
 
     uintptr_t target_name_offset = 0;
     int target_name_type = 6;
+
+    uintptr_t creature_base_address = 0;
+    std::vector<uintptr_t> creature_base_offset;
+    uintptr_t creature_x_off        = 0x34;
+    uintptr_t creature_y_off        = 0x38;
+    uintptr_t creature_z_off        = 0x3C;
+    uintptr_t creature_name_len_off = 0x3C;
+    uintptr_t creature_name_off     = 0x40;
+    bool      creature_name_is_unicode  = true;
+    bool      creature_name_is_ptr      = true;
+    uintptr_t creature_found_address    = 0;
+    uint32_t  creature_id_prefix        = 0;
+    uint32_t  creature_id_prefix_div    = 100000;
 
     std::string game_name;
     HWND game = nullptr;
@@ -139,103 +153,67 @@ namespace Addresses {
     }
 
     void load_custom_addresses() {
-        QFile f("Save/Settings/addresses.json");
-        if (!f.open(QIODevice::ReadOnly)) return;
-        QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
-        if (doc.isNull()) return;
-        QJsonObject data = doc.object();
+        QSettings s("EasyBot", "Addresses");
 
-        if (data.contains("game_config")) {
-            QJsonObject cfg = data["game_config"].toObject();
-            QString ss = cfg.value("square_size").toString();
-            if (!ss.isEmpty()) square_size = ss.toInt();
-            QString ct = cfg.value("collect_threshold").toString();
-            if (!ct.isEmpty()) collect_threshold = ct.toDouble();
-            QString arch = cfg.value("architecture").toString();
-            if (!arch.isEmpty()) application_architecture = arch.contains("64") ? 64 : 32;
-            if (cfg.contains("attack_key")) attack_key = cfg.value("attack_key").toInt(1);
-            if (cfg.contains("walk_mode"))  walk_mode  = cfg.value("walk_mode").toInt(0);
-        }
+        s.beginGroup("game_config");
+        square_size  = s.value("square_size", 75).toInt();
+        attack_key   = s.value("attack_key",   1).toInt();
+        walk_mode    = s.value("walk_mode",     0).toInt();
+        s.endGroup();
 
-        struct Mapping {
-            std::string key;
-            uintptr_t* addr_var;
-            std::vector<uintptr_t>* offset_var;
-            int* type_var;
-            bool is_target;
+        struct Entry {
+            const char*              key;
+            uintptr_t*               addr;
+            std::vector<uintptr_t>*  offsets;
         };
 
-        std::vector<Mapping> mappings = {
-            {"my_x",      &my_x_address,     &my_x_address_offset,   &my_x_type,       false},
-            {"my_y",      &my_y_address,     &my_y_address_offset,   &my_y_type,       false},
-            {"my_z",      &my_z_address,     &my_z_address_offset,   &my_z_type,       false},
-            {"attack",    &attack_address,   &attack_address_offset, &my_attack_type,  false},
-            {"my_hp",     &my_stats_address, &my_hp_offset,          &my_hp_type,      false},
-            {"my_hp_max", nullptr,           &my_hp_max_offset,      nullptr,          false},
-            {"my_mp",     nullptr,           &my_mp_offset,          &my_mp_type,      false},
-            {"my_mp_max", nullptr,           &my_mp_max_offset,      nullptr,          false},
-            {"target_x",  nullptr,           nullptr,                &target_x_type,   true},
-            {"target_y",  nullptr,           nullptr,                &target_y_type,   true},
-            {"target_z",  nullptr,           nullptr,                &target_z_type,   true},
-            {"target_hp", nullptr,           nullptr,                &target_hp_type,  true},
-            {"target_name", nullptr,         nullptr,                &target_name_type,true},
+        Entry entries[] = {
+            {"my_x",      &my_x_address,     &my_x_address_offset},
+            {"my_y",      &my_y_address,     &my_y_address_offset},
+            {"my_z",      &my_z_address,     &my_z_address_offset},
+            {"my_hp",     &my_stats_address, &my_hp_offset},
+            {"my_hp_max", nullptr,           &my_hp_max_offset},
+            {"my_mp",     nullptr,           &my_mp_offset},
+            {"my_mp_max", nullptr,           &my_mp_max_offset},
+            {"attack",         &attack_address,         &attack_address_offset},
+            {"creature_base",  &creature_base_address,  &creature_base_offset},
+            {"target_x",       nullptr,                 nullptr},
+            {"target_y",       nullptr,                 nullptr},
+            {"target_z",       nullptr,                 nullptr},
+            {"target_hp",      nullptr,                 nullptr},
+            {"target_name",    nullptr,                 nullptr},
         };
 
-        uintptr_t* target_offsets[] = {
+        uintptr_t* target_single[] = {
             &target_x_offset, &target_y_offset, &target_z_offset,
             &target_hp_offset, &target_name_offset
         };
         int ti = 0;
 
-        for (auto& m : mappings) {
-            QString qkey = QString::fromStdString(m.key);
-            if (!data.contains(qkey)) continue;
-            QJsonObject entry = data[qkey].toObject();
+        for (auto& e : entries) {
+            s.beginGroup(e.key);
+            QString addr_str   = s.value("address").toString();
+            QString offset_str = s.value("offset").toString();
+            s.endGroup();
 
-            if (m.addr_var && entry.contains("address")) {
-                uintptr_t v = parse_hex(entry["address"].toString().toStdString());
-                if (v) *m.addr_var = v;
+            if (e.addr && !addr_str.isEmpty()) {
+                uintptr_t v = parse_hex(addr_str.toStdString());
+                if (v) *e.addr = v;
             }
 
-            if (m.is_target && entry.contains("offset")) {
-                auto offsets = parse_offsets(entry["offset"].toString().toStdString());
-                if (!offsets.empty()) *target_offsets[ti] = offsets[0];
+            bool is_target = (e.addr == nullptr && e.offsets == nullptr);
+            if (is_target) {
+                if (!offset_str.isEmpty()) {
+                    auto offs = parse_offsets(offset_str.toStdString());
+                    if (!offs.empty()) *target_single[ti] = offs[0];
+                }
                 ti++;
-            } else if (m.offset_var && entry.contains("offset")) {
-                *m.offset_var = parse_offsets(entry["offset"].toString().toStdString());
+            } else if (e.offsets && !offset_str.isEmpty()) {
+                *e.offsets = parse_offsets(offset_str.toStdString());
             }
-
         }
 
-        if (data.contains("coordinates")) {
-            QJsonObject co = data["coordinates"].toObject();
-            if (co.contains("X")) {
-                QJsonArray xv = co["X"].toArray();
-                for (int i = 0; i < xv.size() && i < 12; i++) coordinates_x[i] = xv[i].toInt();
-            }
-            if (co.contains("Y")) {
-                QJsonArray yv = co["Y"].toArray();
-                for (int i = 0; i < yv.size() && i < 12; i++) coordinates_y[i] = yv[i].toInt();
-            }
-            if (co.contains("screen_x") && co["screen_x"].toArray().size() > 0)
-                screen_x[0] = co["screen_x"].toArray()[0].toInt();
-            if (co.contains("screen_y") && co["screen_y"].toArray().size() > 0)
-                screen_y[0] = co["screen_y"].toArray()[0].toInt();
-            if (co.contains("screen_width")) {
-                QJsonArray sw = co["screen_width"].toArray();
-                for (int i = 0; i < sw.size() && i < 2; i++) screen_width[i] = sw[i].toInt();
-            }
-            if (co.contains("screen_height")) {
-                QJsonArray sh = co["screen_height"].toArray();
-                for (int i = 0; i < sh.size() && i < 2; i++) screen_height[i] = sh[i].toInt();
-            }
-            if (co.contains("battle_x") && co["battle_x"].toArray().size() > 0)
-                battle_x[0] = co["battle_x"].toArray()[0].toInt();
-            if (co.contains("battle_y") && co["battle_y"].toArray().size() > 0)
-                battle_y[0] = co["battle_y"].toArray()[0].toInt();
-        }
-
-        std::cout << "Loaded dynamic addresses\n";
+        Logger::log("[Addresses] Loaded addresses from registry");
     }
 
     void load_tibia(const std::string& window_title, DWORD pid, HWND hwnd) {
@@ -246,6 +224,7 @@ namespace Addresses {
         my_x_address = 0;
         my_stats_address = 0;
         attack_address = 0;
+        creature_base_address = 0;
 
         my_x_address_offset.clear();
         my_y_address_offset.clear();
@@ -255,6 +234,7 @@ namespace Addresses {
         my_mp_offset.clear();
         my_mp_max_offset.clear();
         attack_address_offset.clear();
+        creature_base_offset.clear();
 
         load_custom_addresses();
 
@@ -276,14 +256,24 @@ namespace Addresses {
             game = nullptr;
         }
 
-        std::filesystem::create_directories("Images/" + client_name);
-        std::cout << "Connected to: " << game_name << "\n";
+        Logger::log("[Addresses] Connected to: " + game_name);
 
         process_handle = OpenProcess(PROCESS_ALL_ACCESS, FALSE, proc_id);
+
         HMODULE mods[1024];
         DWORD needed;
         if (EnumProcessModules(process_handle, mods, sizeof(mods), &needed)) {
             base_address = reinterpret_cast<uintptr_t>(mods[0]);
         }
+
+        BOOL is_wow64 = FALSE;
+        if (IsWow64Process(process_handle, &is_wow64)) {
+            application_architecture = is_wow64 ? 32 : 64;
+        }
+
+        std::ostringstream ss;
+        ss << "[Addresses] architecture=" << application_architecture
+           << " base=0x" << std::hex << base_address;
+        Logger::log(ss.str());
     }
 }

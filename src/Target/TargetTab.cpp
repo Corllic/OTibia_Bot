@@ -1,6 +1,4 @@
 #include "TargetTab.h"
-#include "../Functions/GeneralFunctions.h"
-#include "../Core/Addresses.h"
 #include <QGridLayout>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -24,9 +22,6 @@ TargetTab::TargetTab(QWidget* parent) : QWidget(parent) {
     for (int i = 1; i <= 12; i++) skin_combo->addItem(QString("F%1").arg(i));
     target_edit = new QLineEdit(this); target_edit->setPlaceholderText("Orc, * - All Monsters");
     target_list = new QListWidget(this); target_list->setFixedSize(150, 150);
-    connect(target_list, &QListWidget::itemDoubleClicked, [this](QListWidgetItem* item) {
-        GeneralFunctions::delete_item(target_list, item);
-    });
 
     status_label = new QLabel("", this);
     status_label->setAlignment(Qt::AlignCenter);
@@ -74,17 +69,3 @@ void TargetTab::add_target() {
 
 void TargetTab::clear_target_list() { target_list->clear(); }
 
-void TargetTab::start_target_thread(int state, std::set<std::tuple<int,int,int>> blacklist) {
-    if (state == Qt::Checked) {
-        if (target_thread) { target_thread->stop(); target_thread->wait(2000); }
-        std::vector<QVariantMap> targets;
-        for (int i = 0; i < target_list->count(); i++)
-            targets.push_back(target_list->item(i)->data(Qt::UserRole).toMap());
-        target_thread = new TargetThread(targets, Addresses::attack_key - 1, blacklist, this);
-        target_thread->start();
-    } else {
-        if (target_thread) { target_thread->stop(); target_thread->wait(2000); target_thread = nullptr; }
-    }
-}
-
-void TargetTab::stop_all_threads() { start_target_thread(Qt::Unchecked); }

@@ -12,7 +12,6 @@ class SettingsTab : public QWidget {
     Q_OBJECT
 public:
     explicit SettingsTab(QWidget* parent = nullptr);
-    void stop_all_threads() {}
 private slots:
     void save_addresses();
     void start_set_character();

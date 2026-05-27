@@ -1,5 +1,4 @@
 #include "SpellTab.h"
-#include "../Functions/GeneralFunctions.h"
 #include <QGridLayout>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -25,9 +24,6 @@ SpellTab::SpellTab(QWidget* parent) : QWidget(parent) {
     min_mp_edit  = new QLineEdit(this); min_mp_edit->setPlaceholderText("300");  min_mp_edit->setFixedWidth(40);
     min_hp_edit  = new QLineEdit(this); min_hp_edit->setPlaceholderText("50");   min_hp_edit->setFixedWidth(40);
     spell_list   = new QListWidget(this);
-    connect(spell_list, &QListWidget::itemDoubleClicked, [this](QListWidgetItem* item) {
-        GeneralFunctions::delete_item(spell_list, item);
-    });
 
     status_label = new QLabel("", this);
     status_label->setStyleSheet("color: Red; font-weight: bold;");
@@ -86,17 +82,3 @@ void SpellTab::add_spell() {
     status_label->setText("Spell added!");
 }
 
-void SpellTab::start_thread(int state) {
-    if (state == Qt::Checked) {
-        if (spell_thread) { spell_thread->stop(); spell_thread->wait(2000); }
-        std::vector<QVariantMap> data;
-        for (int i = 0; i < spell_list->count(); i++)
-            data.push_back(spell_list->item(i)->data(Qt::UserRole).toMap());
-        spell_thread = new SpellThread(data, this);
-        spell_thread->start();
-    } else {
-        if (spell_thread) { spell_thread->stop(); spell_thread->wait(2000); spell_thread = nullptr; }
-    }
-}
-
-void SpellTab::stop_all_threads() { start_thread(Qt::Unchecked); }
