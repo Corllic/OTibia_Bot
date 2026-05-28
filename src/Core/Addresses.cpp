@@ -11,7 +11,7 @@ namespace Addresses {
     // 1 → Console
     // 2 → File logs.txt
     // 3 → Console + File
-    int log_level = 1;
+    int log_level = 0;
 
     std::mutex walker_Lock;
     std::mutex attack_Lock;

@@ -1,26 +1,28 @@
 #pragma once
+#include <windows.h>
 #include <string>
 #include <vector>
-#include <cstdint>
 #include <atomic>
+#include <mutex>
+#include <cstdint>
 
 namespace CreatureScanner {
 
-extern std::atomic<int> scan_progress_pct;
-
 struct Creature {
-    int x, y, z;
-    std::string name;
     uintptr_t address;
+    int       x;
+    int       y;
+    int       z;
+    std::string name;
+    int       hp_pct;
 };
 
-std::vector<Creature> scan(int player_x, int player_y, int player_z,
-                            int range_x = 7, int range_y = 5);
+extern std::atomic<int> scan_progress_pct;
+extern std::mutex       creatures_mutex;
+extern std::vector<Creature> known_creatures;
 
-bool detect_name_offset(int player_x, int player_y, int player_z,
-                         const std::string& hint_name);
-
-bool detect_all_offsets(int cx1, int cy1, int cz1, const std::string& name1,
-                         int cx2, int cy2, int cz2, const std::string& name2);
+std::vector<Creature> scan_map(int player_x, int player_y, int player_z);
+void                  refresh_known();
+void                  reset_regions();
 
 }

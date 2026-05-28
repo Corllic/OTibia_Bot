@@ -30,9 +30,20 @@ static std::string hex(uintptr_t v) {
     return ss.str();
 }
 
+static int type_to_bytes(int type) {
+    switch (type) {
+        case 1: return 1;
+        case 2: return 2;
+        case 3: return 4;
+        default: return 4;
+    }
+}
+
 std::optional<int64_t> read(uintptr_t offset_from_base,
-                             const std::vector<uintptr_t>& offsets)
+                             const std::vector<uintptr_t>& offsets,
+                             int size_bytes)
 {
+    size_bytes = type_to_bytes(size_bytes);
     if (!Addresses::process_handle) {
         Logger::log("[Memory] process_handle is null");
         return std::nullopt;
@@ -49,13 +60,16 @@ std::optional<int64_t> read(uintptr_t offset_from_base,
                 + " start=" + hex(current));
 
     if (offsets.empty()) {
-        int32_t v = 0;
-        if (!rpm(current, &v, 4)) {
+        int64_t v = 0;
+        if (!rpm(current, &v, (size_t)size_bytes)) {
             Logger::log("[Memory] rpm failed (no offsets) err=" + std::to_string(GetLastError()));
             return std::nullopt;
         }
+        if (size_bytes == 2) v = (int64_t)(int16_t)(v & 0xFFFF);
+        else if (size_bytes == 1) v = (int64_t)(int8_t)(v & 0xFF);
+        else v = (int64_t)(int32_t)(v & 0xFFFFFFFF);
         Logger::log("[Memory] value=" + std::to_string(v));
-        return static_cast<int64_t>(v);
+        return v;
     }
 
     auto ptr = deref_ptr(current);
@@ -78,13 +92,16 @@ std::optional<int64_t> read(uintptr_t offset_from_base,
     }
 
     uintptr_t final_addr = current + offsets.back();
-    int32_t v = 0;
-    if (!rpm(final_addr, &v, 4)) {
+    int64_t v = 0;
+    if (!rpm(final_addr, &v, (size_t)size_bytes)) {
         Logger::log("[Memory] rpm failed at " + hex(final_addr) + " err=" + std::to_string(GetLastError()));
         return std::nullopt;
     }
+    if (size_bytes == 2) v = (int64_t)(int16_t)(v & 0xFFFF);
+    else if (size_bytes == 1) v = (int64_t)(int8_t)(v & 0xFF);
+    else v = (int64_t)(int32_t)(v & 0xFFFFFFFF);
     Logger::log("[Memory] final " + hex(final_addr) + " value=" + std::to_string(v));
-    return static_cast<int64_t>(v);
+    return v;
 }
 
 }

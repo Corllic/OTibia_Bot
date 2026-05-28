@@ -9,12 +9,11 @@
 #include <QIcon>
 #include <QShowEvent>
 #include <QtConcurrent/QtConcurrent>
-#include <atomic>
 
 StatusTab::StatusTab(QWidget* parent) : QWidget(parent) {
     setWindowTitle("Status");
     setWindowIcon(QIcon("Icon.ico"));
-    setFixedSize(340, 600);
+    setFixedSize(340, 460);
 
     auto* root = new QVBoxLayout(this);
     root->setSpacing(6);
@@ -56,39 +55,6 @@ StatusTab::StatusTab(QWidget* parent) : QWidget(parent) {
         auto* gb = new QGroupBox("Creatures Nearby", this);
         auto* vl = new QVBoxLayout(gb);
 
-        auto* name_hl = new QHBoxLayout();
-        name_hint_edit = new QLineEdit(this);
-        name_hint_edit->setPlaceholderText("Creature 1 name...");
-        name_hl->addWidget(new QLabel("Name 1:", this));
-        name_hl->addWidget(name_hint_edit);
-
-        auto* coord_hl = new QHBoxLayout();
-        creature_x_edit = new QLineEdit(this); creature_x_edit->setPlaceholderText("X"); creature_x_edit->setFixedWidth(60);
-        creature_y_edit = new QLineEdit(this); creature_y_edit->setPlaceholderText("Y"); creature_y_edit->setFixedWidth(60);
-        creature_z_edit = new QLineEdit(this); creature_z_edit->setPlaceholderText("Z"); creature_z_edit->setFixedWidth(40);
-        coord_hl->addWidget(creature_x_edit);
-        coord_hl->addWidget(creature_y_edit);
-        coord_hl->addWidget(creature_z_edit);
-        coord_hl->addStretch();
-
-        auto* name_hl2 = new QHBoxLayout();
-        name_hint_edit2 = new QLineEdit(this);
-        name_hint_edit2->setPlaceholderText("Creature 2 name...");
-        name_hl2->addWidget(new QLabel("Name 2:", this));
-        name_hl2->addWidget(name_hint_edit2);
-
-        auto* coord_hl2 = new QHBoxLayout();
-        creature_x_edit2 = new QLineEdit(this); creature_x_edit2->setPlaceholderText("X"); creature_x_edit2->setFixedWidth(60);
-        creature_y_edit2 = new QLineEdit(this); creature_y_edit2->setPlaceholderText("Y"); creature_y_edit2->setFixedWidth(60);
-        creature_z_edit2 = new QLineEdit(this); creature_z_edit2->setPlaceholderText("Z"); creature_z_edit2->setFixedWidth(40);
-        auto* auto_btn = new QPushButton("Auto-Detect", this);
-        connect(auto_btn, &QPushButton::clicked, this, &StatusTab::auto_detect_offsets);
-        coord_hl2->addWidget(creature_x_edit2);
-        coord_hl2->addWidget(creature_y_edit2);
-        coord_hl2->addWidget(creature_z_edit2);
-        coord_hl2->addStretch();
-        coord_hl2->addWidget(auto_btn);
-
         scan_progress = new QProgressBar(this);
         scan_progress->setRange(0, 100);
         scan_progress->setValue(0);
@@ -96,34 +62,27 @@ StatusTab::StatusTab(QWidget* parent) : QWidget(parent) {
         scan_progress->setFixedHeight(16);
         scan_progress->hide();
 
-        offsets_label = new QLabel("", this);
-        offsets_label->setStyleSheet("color: #888; font-size: 10px;");
-
         auto* top_hl = new QHBoxLayout();
         creature_count_label = new QLabel("Found: 0", this);
         top_hl->addWidget(creature_count_label);
         top_hl->addStretch();
 
         creature_list = new QListWidget(this);
-        creature_list->setFixedHeight(150);
+        creature_list->setFixedHeight(200);
 
-        vl->addLayout(name_hl);
-        vl->addLayout(coord_hl);
-        vl->addLayout(name_hl2);
-        vl->addLayout(coord_hl2);
         vl->addWidget(scan_progress);
-        vl->addWidget(offsets_label);
         vl->addLayout(top_hl);
         vl->addWidget(creature_list);
         root->addWidget(gb);
     }
 
-    detect_watcher = new QFutureWatcher<bool>(this);
-    connect(detect_watcher, &QFutureWatcher<bool>::finished, this, &StatusTab::on_detect_finished);
+    map_watcher = new QFutureWatcher<std::vector<CreatureScanner::Creature>>(this);
+    connect(map_watcher, &QFutureWatcher<std::vector<CreatureScanner::Creature>>::finished,
+            this, &StatusTab::on_map_scan_finished);
 
-    scan_watcher = new QFutureWatcher<std::vector<CreatureScanner::Creature>>(this);
-    connect(scan_watcher, &QFutureWatcher<std::vector<CreatureScanner::Creature>>::finished,
-            this, &StatusTab::on_scan_finished);
+    refresh_watcher = new QFutureWatcher<void>(this);
+    connect(refresh_watcher, &QFutureWatcher<void>::finished,
+            this, &StatusTab::on_fast_refresh_finished);
 
     progress_timer = new QTimer(this);
     progress_timer->setInterval(200);
@@ -132,24 +91,32 @@ StatusTab::StatusTab(QWidget* parent) : QWidget(parent) {
     });
 
     timer = new QTimer(this);
+    timer->setInterval(500);
     connect(timer, &QTimer::timeout, this, &StatusTab::refresh);
 
-    scan_timer = new QTimer(this);
-    scan_timer->setInterval(1000);
-    connect(scan_timer, &QTimer::timeout, this, &StatusTab::scan_creatures);
+    map_scan_timer = new QTimer(this);
+    map_scan_timer->setInterval(500);
+    connect(map_scan_timer, &QTimer::timeout, this, &StatusTab::do_map_scan);
+
+    fast_refresh_timer = new QTimer(this);
+    fast_refresh_timer->setInterval(50);
+    connect(fast_refresh_timer, &QTimer::timeout, this, &StatusTab::do_fast_refresh);
 }
 
 void StatusTab::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
-    timer->start(500);
-    if (Addresses::creature_found_address != 0)
-        scan_timer->start();
+    timer->start();
+    map_scan_timer->start();
+    fast_refresh_timer->start();
+    do_map_scan();
 }
 
 void StatusTab::hideEvent(QHideEvent* event) {
     QWidget::hideEvent(event);
     timer->stop();
-    scan_timer->stop();
+    map_scan_timer->stop();
+    fast_refresh_timer->stop();
+    progress_timer->stop();
 }
 
 void StatusTab::refresh() {
@@ -170,9 +137,9 @@ void StatusTab::refresh() {
         mp_bar->setValue(mm > 0 ? m * 100 / mm : 0);
     } else { mp_label->setText("MP: -"); mp_bar->setValue(0); }
 
-    auto x = Memory::read(Addresses::my_x_address, Addresses::my_x_address_offset);
-    auto y = Memory::read(Addresses::my_y_address, Addresses::my_y_address_offset);
-    auto z = Memory::read(Addresses::my_z_address, Addresses::my_z_address_offset);
+    auto x = Memory::read(Addresses::my_x_address, Addresses::my_x_address_offset, Addresses::my_x_type);
+    auto y = Memory::read(Addresses::my_y_address, Addresses::my_y_address_offset, Addresses::my_y_type);
+    auto z = Memory::read(Addresses::my_z_address, Addresses::my_z_address_offset, Addresses::my_z_type);
 
     if (x && y && z)
         pos_label->setText(QString("Pos: %1, %2, %3").arg(*x).arg(*y).arg(*z));
@@ -185,105 +152,72 @@ void StatusTab::refresh() {
     attack_label->setStyleSheet(attacking ? "color: #c0392b; font-weight: bold;" : "");
 }
 
-void StatusTab::auto_detect_offsets() {
-    if (detect_watcher->isRunning()) return;
-
-    QString name1 = name_hint_edit->text().trimmed();
-    QString name2 = name_hint_edit2->text().trimmed();
-    if (name1.isEmpty() || creature_x_edit->text().isEmpty() ||
-        creature_y_edit->text().isEmpty() || creature_z_edit->text().isEmpty() ||
-        name2.isEmpty() || creature_x_edit2->text().isEmpty() ||
-        creature_y_edit2->text().isEmpty() || creature_z_edit2->text().isEmpty()) {
-        creature_count_label->setText("Fill both name + X/Y/Z");
-        return;
-    }
-
-    int cx1 = creature_x_edit->text().toInt();
-    int cy1 = creature_y_edit->text().toInt();
-    int cz1 = creature_z_edit->text().toInt();
-    int cx2 = creature_x_edit2->text().toInt();
-    int cy2 = creature_y_edit2->text().toInt();
-    int cz2 = creature_z_edit2->text().toInt();
-    std::string sname1 = name1.toStdString();
-    std::string sname2 = name2.toStdString();
-
-    creature_count_label->setText("Detecting...");
-    scan_progress->setValue(0);
-    scan_progress->show();
-    progress_timer->start();
-
-    auto future = QtConcurrent::run([cx1, cy1, cz1, sname1, cx2, cy2, cz2, sname2]() {
-        return CreatureScanner::detect_all_offsets(cx1, cy1, cz1, sname1, cx2, cy2, cz2, sname2);
-    });
-    detect_watcher->setFuture(future);
-}
-
-void StatusTab::on_detect_finished() {
-    progress_timer->stop();
-    scan_progress->setValue(100);
-    scan_progress->hide();
-    bool ok = detect_watcher->result();
-    if (ok) {
-        offsets_label->setText(
-            QString("x:0x%1 y:0x%2 z:0x%3 name:0x%4 id:%5")
-                .arg(Addresses::creature_x_off, 0, 16)
-                .arg(Addresses::creature_y_off, 0, 16)
-                .arg(Addresses::creature_z_off, 0, 16)
-                .arg(Addresses::creature_name_off, 0, 16)
-                .arg(Addresses::creature_id_prefix)
-        );
-        scan_timer->start();
-        scan_creatures();
-    } else {
-        creature_count_label->setText("Not found");
-    }
-}
-
-void StatusTab::detect_name_offset() {
-    if (detect_watcher->isRunning()) return;
-    QString hint = name_hint_edit->text().trimmed();
-    if (hint.isEmpty()) { creature_count_label->setText("Enter name hint first"); return; }
+void StatusTab::do_map_scan() {
+    if (map_watcher->isRunning()) return;
 
     auto x = Memory::read(Addresses::my_x_address, Addresses::my_x_address_offset);
     auto y = Memory::read(Addresses::my_y_address, Addresses::my_y_address_offset);
-    auto z = Memory::read(Addresses::my_z_address, Addresses::my_z_address_offset);
-    if (!x || !y || !z) { creature_count_label->setText("No position"); return; }
-
-    int px = static_cast<int>(*x), py = static_cast<int>(*y), pz = static_cast<int>(*z);
-    std::string sname = hint.toStdString();
-
-    creature_count_label->setText("Detecting...");
-    scan_progress->show();
-
-    auto future = QtConcurrent::run([px, py, pz, sname]() {
-        return CreatureScanner::detect_name_offset(px, py, pz, sname);
-    });
-    detect_watcher->setFuture(future);
-}
-
-void StatusTab::scan_creatures() {
-    if (scan_watcher->isRunning()) return;
-
-    auto x = Memory::read(Addresses::my_x_address, Addresses::my_x_address_offset);
-    auto y = Memory::read(Addresses::my_y_address, Addresses::my_y_address_offset);
-    auto z = Memory::read(Addresses::my_z_address, Addresses::my_z_address_offset);
+    auto z = Memory::read(Addresses::my_z_address, Addresses::my_z_address_offset, Addresses::my_z_type);
     if (!x || !y || !z) return;
 
     int px = static_cast<int>(*x), py = static_cast<int>(*y), pz = static_cast<int>(*z);
 
+    scan_progress->setValue(0);
+    scan_progress->show();
+    progress_timer->start();
+
     auto future = QtConcurrent::run([px, py, pz]() -> std::vector<CreatureScanner::Creature> {
-        return CreatureScanner::scan(px, py, pz);
+        return CreatureScanner::scan_map(px, py, pz);
     });
-    scan_watcher->setFuture(future);
+    map_watcher->setFuture(future);
 }
 
-void StatusTab::on_scan_finished() {
-    auto creatures = scan_watcher->result();
+void StatusTab::on_map_scan_finished() {
+    progress_timer->stop();
+    scan_progress->hide();
+
+    std::vector<CreatureScanner::Creature> creatures;
+    {
+        std::lock_guard<std::mutex> lk(CreatureScanner::creatures_mutex);
+        creatures = CreatureScanner::known_creatures;
+    }
+
     creature_list->clear();
     for (auto& c : creatures) {
-        creature_list->addItem(QString("%1  [%2, %3, %4]")
+        creature_list->addItem(QString("%1  [%2, %3, %4]  HP:%5%")
             .arg(QString::fromStdString(c.name))
-            .arg(c.x).arg(c.y).arg(c.z));
+            .arg(c.x).arg(c.y).arg(c.z)
+            .arg(c.hp_pct));
     }
     creature_count_label->setText(QString("Found: %1").arg(creatures.size()));
+}
+
+void StatusTab::do_fast_refresh() {
+    if (refresh_watcher->isRunning()) return;
+
+    {
+        std::lock_guard<std::mutex> lk(CreatureScanner::creatures_mutex);
+        if (CreatureScanner::known_creatures.empty()) return;
+    }
+
+    auto future = QtConcurrent::run([]() {
+        CreatureScanner::refresh_known();
+    });
+    refresh_watcher->setFuture(future);
+}
+
+void StatusTab::on_fast_refresh_finished() {
+    std::vector<CreatureScanner::Creature> creatures;
+    {
+        std::lock_guard<std::mutex> lk(CreatureScanner::creatures_mutex);
+        creatures = CreatureScanner::known_creatures;
+    }
+
+    for (int i = 0; i < creature_list->count() && i < (int)creatures.size(); ++i) {
+        auto& c = creatures[i];
+        creature_list->item(i)->setText(QString("%1  [%2, %3, %4]  HP:%5%")
+            .arg(QString::fromStdString(c.name))
+            .arg(c.x).arg(c.y).arg(c.z)
+            .arg(c.hp_pct));
+    }
 }

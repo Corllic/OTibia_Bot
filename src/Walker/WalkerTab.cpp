@@ -118,7 +118,7 @@ void WalkerTab::hideEvent(QHideEvent* event) {
 void WalkerTab::add_waypoint() {
     int x = static_cast<int>(Memory::read(Addresses::my_x_address, Addresses::my_x_address_offset).value_or(0));
     int y = static_cast<int>(Memory::read(Addresses::my_y_address, Addresses::my_y_address_offset).value_or(0));
-    int z = static_cast<int>(Memory::read(Addresses::my_z_address, Addresses::my_z_address_offset).value_or(0));
+    int z = static_cast<int>(Memory::read(Addresses::my_z_address, Addresses::my_z_address_offset, Addresses::my_z_type).value_or(0));
     int act = act_group->checkedId();
     int dir = dir_group->checkedId();
     QVariantMap data;
@@ -169,7 +169,7 @@ std::set<std::tuple<int,int,int>> WalkerTab::get_blacklist() const {
 void WalkerTab::update_position() {
     auto x = Memory::read(Addresses::my_x_address, Addresses::my_x_address_offset);
     auto y = Memory::read(Addresses::my_y_address, Addresses::my_y_address_offset);
-    auto z = Memory::read(Addresses::my_z_address, Addresses::my_z_address_offset);
+    auto z = Memory::read(Addresses::my_z_address, Addresses::my_z_address_offset, Addresses::my_z_type);
     if (x && y && z) {
         pos_label->setText(QString("Current Pos: %1, %2, %3").arg(*x).arg(*y).arg(*z));
     } else {
