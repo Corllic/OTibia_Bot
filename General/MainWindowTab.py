@@ -8,6 +8,7 @@ from Settings.SettingsTab import SettingsTab
 from SmartHotkeys.SmartHotkeysTab import SmartHotkeysTab
 from Hotkeys.HotkeysTab import HotkeysTab
 from Looting.LootingTab import LootingTab
+from Catch.CatchTab import CatchTab
 import os
 
 class MainWindowTab(QWidget):
@@ -21,6 +22,7 @@ class MainWindowTab(QWidget):
         self.smartHotkeysTab_instance = None
         self.hotkeysTab_instance = None
         self.lootingTab_instance = None
+        self.catchTab_instance = None
         
         # Bot timer
         self.bot_start_time = QTime.currentTime()
@@ -55,6 +57,10 @@ class MainWindowTab(QWidget):
         self.looting_button = QPushButton("Looting", self)
         self.looting_button.clicked.connect(self.looting)
 
+        self.catch_button = QPushButton("Catch Pokemon", self)
+        self.catch_button.clicked.connect(self.catch)
+        self.catch_button.setStyleSheet("background-color: #2a4a2a;")
+
         self.layout.addWidget(self.healing_button, 0, 0)
         self.layout.addWidget(self.spell_button, 0, 1)
         self.layout.addWidget(self.target_button, 1, 0)
@@ -63,6 +69,7 @@ class MainWindowTab(QWidget):
         self.layout.addWidget(self.smart_hotkeys_button, 2, 1)
         self.layout.addWidget(self.hotkeys_button, 3, 0)
         self.layout.addWidget(self.looting_button, 3, 1)
+        self.layout.addWidget(self.catch_button, 4, 0, 1, 2)
 
         # --- Bot Status GroupBox ---
         self.status_groupbox = QGroupBox("Bot Status", self)
@@ -85,6 +92,10 @@ class MainWindowTab(QWidget):
         
         self.looting_checkbox = QCheckBox("Looting", self)
         self.looting_checkbox.stateChanged.connect(self.toggle_looting)
+
+        self.catch_checkbox = QCheckBox("Catch", self)
+        self.catch_checkbox.stateChanged.connect(self.toggle_catch)
+        self.catch_checkbox.setStyleSheet("color: #88ff88;")
         
         self.status_layout.addWidget(self.healing_checkbox, 0, 0)
         self.status_layout.addWidget(self.spell_checkbox, 0, 1)
@@ -92,6 +103,7 @@ class MainWindowTab(QWidget):
         self.status_layout.addWidget(self.walker_checkbox, 1, 1)
         self.status_layout.addWidget(self.smart_hotkeys_checkbox, 2, 0)
         self.status_layout.addWidget(self.looting_checkbox, 2, 1)
+        self.status_layout.addWidget(self.catch_checkbox, 3, 0, 1, 2)
         
         self.status_groupbox.setLayout(self.status_layout)
         self.layout.addWidget(self.status_groupbox, 5, 0, 1, 2)
@@ -183,6 +195,17 @@ class MainWindowTab(QWidget):
             self.lootingTab_instance = LootingTab()
             self.lootingTab_instance.setWindowFlags(Qt.WindowStaysOnTopHint)
         self.lootingTab_instance.show()
+
+    def catch(self):
+        if self.catchTab_instance is None:
+            self.catchTab_instance = CatchTab()
+            self.catchTab_instance.setWindowFlags(Qt.WindowStaysOnTopHint)
+        self.catchTab_instance.show()
+
+    def toggle_catch(self, state):
+        if self.catchTab_instance is None:
+            self.catchTab_instance = CatchTab()
+        self.catchTab_instance.start_catch_thread(state)
 
     def toggle_healing(self, state):
         if self.healingTab_instance is None:

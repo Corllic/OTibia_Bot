@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (
     QWidget, QGridLayout, QListWidget, QComboBox, QPushButton,
-    QLabel, QCheckBox, QListWidgetItem
+    QLabel, QCheckBox, QListWidgetItem, QLineEdit
 )
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import Qt
@@ -43,37 +43,49 @@ class SmartHotkeysTab(QWidget):
         self.rune_option_combobox = QComboBox(self)
         self.rune_option_combobox.addItems(["With Crosshair", "On Target", "On Yourself"])
 
-        self.hotkey_option_combobox = QComboBox(self)
-        for i in range(1, 13):
-            self.hotkey_option_combobox.addItem(f"F{i}")
+        # Pole tekstowe - wpisz dowolny klawisz (F1, F5, 1, 2, Space, itd.)
+        self.hotkey_option_combobox = QLineEdit(self)
+        self.hotkey_option_combobox.setPlaceholderText("Klawisz (np. F1, 1, Space, *)")
+        self.hotkey_option_combobox.setText("F1")
+
+        # Interval - co ile sekund wykonuj
+        self.interval_edit = QLineEdit(self)
+        self.interval_edit.setPlaceholderText("Interwal (s)")
+        self.interval_edit.setText("5.0")
+        self.interval_edit.setFixedWidth(70)
 
         # Buttons
-        self.coordinates_button = QPushButton("Coordinates", self)
+        self.coordinates_button = QPushButton("Set Coords", self)
 
         # Button functions
         self.coordinates_button.clicked.connect(self.start_set_hotkey_thread)
 
         # Add Widgets to Layout
-        self.layout.addWidget(self.smart_hotkeys_listWidget, 0, 0, 1, 3)
-        self.layout.addWidget(self.rune_option_combobox, 1, 0)
-        self.layout.addWidget(self.hotkey_option_combobox, 1, 1)
-        self.layout.addWidget(self.coordinates_button, 1, 2)
+        self.layout.addWidget(self.smart_hotkeys_listWidget, 0, 0, 1, 4)
+        self.layout.addWidget(self.hotkey_option_combobox, 1, 0)
+        self.layout.addWidget(self.interval_edit, 1, 1)
+        self.layout.addWidget(self.rune_option_combobox, 1, 2)
+        self.layout.addWidget(self.coordinates_button, 1, 3)
 
         # Finally, add the status label in row 2 (spanning all columns)
-        self.layout.addWidget(self.status_label, 2, 0, 1, 3)
+        self.layout.addWidget(self.status_label, 2, 0, 1, 4)
 
     def start_set_hotkey_thread(self) -> None:
-        if self.set_hotkey_thread and self.set_hotkey_thread.isRunning():
-            self.set_hotkey_thread.stop()
-            self.set_hotkey_thread.wait(2000)
+        if self.set_smart_hotkey_thread and self.set_smart_hotkey_thread.isRunning():
+            self.set_smart_hotkey_thread.stop()
+            self.set_smart_hotkey_thread.wait(2000)
 
-        hotkey_name = self.hotkey_option_combobox.currentText()
+        hotkey_name = self.hotkey_option_combobox.text().strip()
         rune_option = self.rune_option_combobox.currentText()
+        try:
+            interval = float(self.interval_edit.text())
+        except ValueError:
+            interval = 5.0
         
-        self.set_hotkey_thread = SetSmartHotkeyThread(hotkey_name, rune_option)
-        self.set_hotkey_thread.status_signal.connect(self.update_status_label)
-        self.set_hotkey_thread.hotkey_set_signal.connect(self.add_smart_hotkey_item)
-        self.set_hotkey_thread.start()
+        self.set_smart_hotkey_thread = SetSmartHotkeyThread(hotkey_name, rune_option, interval)
+        self.set_smart_hotkey_thread.status_signal.connect(self.update_status_label)
+        self.set_smart_hotkey_thread.hotkey_set_signal.connect(self.add_smart_hotkey_item)
+        self.set_smart_hotkey_thread.start()
 
     def update_status_label(self, text, style):
         self.status_label.setText(text)

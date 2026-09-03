@@ -21,6 +21,8 @@ class MEMORY_BASIC_INFORMATION(c.Structure):
 
 # Reads value from memory
 def read_memory_address(address_read, offsets, option):
+    if Addresses.base_address is None or address_read is None:
+        return None
     try:
         address = c.c_void_p(Addresses.base_address + address_read + offsets)
         if option < 6:
@@ -57,11 +59,13 @@ def read_memory_address(address_read, offsets, option):
             case _:
                 return bytes(buffer)
     except Exception as e:
-        print('Memory Exception:', e)
+        # Cicho ignoruj gdy brak konfiguracji adresow
         return None
 
 
 def read_pointer_address(address_read, offsets, option):
+    if Addresses.base_address is None or address_read is None:
+        return None
     try:
         address = c.c_void_p(Addresses.base_address + address_read)
         if option == 6 or option == 7:
@@ -105,8 +109,7 @@ def read_pointer_address(address_read, offsets, option):
                 return decoded_value
             case _:
                 return bytes(buffer)
-    except Exception as e:
-        print('Pointer Exception:', e)
+    except Exception:
         return None
 
 

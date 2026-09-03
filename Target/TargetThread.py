@@ -1,4 +1,6 @@
 import random
+import win32gui
+import win32con
 
 import numpy as np
 from PyQt5.QtCore import QThread, QMutex, QMutexLocker
@@ -23,7 +25,15 @@ class TargetThread(QThread):
         super().__init__()
         self.running = True
         self.targets = targets
-        self.attack_key = attack_key + 1
+        # attack_key: -1=*, 0-11=F1-F12, 12=OCR Battle List
+        if attack_key == -1:
+            self.attack_key = 0   # specjalny kod - wysyla klawisz *
+        elif attack_key == 12:
+            self.attack_key = 13  # OCR Battle List
+        else:
+            self.attack_key = attack_key + 1  # F1=1 .. F12=12
+        # Jesli brak adresow RAM - automatycznie uzyj OCR
+        self._use_ocr_fallback = (Addresses.attack_address is None)
         self.loot_state = loot_state
         self.state_lock = QMutex()
         self.loot_data = loot_data
@@ -34,13 +44,23 @@ class TargetThread(QThread):
 
 
     def run(self):
-        my_x, my_y, my_z = read_my_wpt()
+        my_x, my_y, my_z = read_my_wpt() or (0, 0, 0)
         previous_pos = (my_x, my_y, my_z)   
         stuck_timer = 0
         current_target_name = ""
         while self.running:
             QThread.msleep(random.randint(70, 100))
             try:
+                # Gdy brak adresow RAM - Tab (wybierz cel) + klawisz ataku
+                if Addresses.attack_address is None or self._use_ocr_fallback:
+                    # Tab cykluje po dostepnych celach w battle liscie
+                    win32gui.PostMessage(Addresses.game, win32con.WM_KEYDOWN, 0x09, 0x000F0001)
+                    win32gui.PostMessage(Addresses.game, win32con.WM_KEYUP,   0x09, 0xC00F0001)
+                    QThread.msleep(random.randint(100, 150))
+                    # Atak
+                    press_hotkey(self.attack_key)
+                    QThread.msleep(random.randint(1500, 2500))
+                    continue
                 open_corpse = False
                 target_id = read_targeting_status()
                 if target_id == 0:
@@ -51,7 +71,7 @@ class TargetThread(QThread):
                     if self.attack_key == 13: # OCR Battle List Mode
                         self.scan_and_click_battle_list_ocr()
                     else:
-                        press_hotkey(self.attack_key)
+                        press_hotkey(self.attack_key)  # 0 = *, 1-12 = F1-F12
                         
                     QThread.msleep(random.randint(100, 150))
                     target_id = read_targeting_status()

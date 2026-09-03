@@ -52,29 +52,53 @@ class SmartHotkeysThread(QThread):
         super().__init__()
         self.running = True
         self.hotkeys_data = hotkeys_data
+        # Czasy ostatniego wykonania dla kazdego hotkeya
+        self.last_times = {}
 
     def run(self):
+        import time
         while self.running:
-            for hotkey_data in self.hotkeys_data:
+            now = time.time()
+            for i, hotkey_data in enumerate(self.hotkeys_data):
                 if not self.running: break
-                hotkey_number = int(hotkey_data['Hotkey'][1:])
-                vk_code = 111 + hotkey_number
-                if win32api.GetAsyncKeyState(vk_code) & 1:
-                    mouse_function(hotkey_data['X'], hotkey_data['Y'], option=1)
-                    if hotkey_data['Option'] == 'On Target':
-                        target_id = read_targeting_status()
-                        if target_id:
-                            target_x, target_y, target_z, target_name, target_hp = read_target_info()
-                            x, y, z = read_my_wpt()
-                            dx = (target_x - x) * Addresses.square_size
-                            dy = (target_y - y) * Addresses.square_size
-                            mouse_function(coordinates_x[0] + dx, coordinates_y[0] + dy, option=2)
-                    elif hotkey_data['Option'] == 'On Yourself':
-                        mouse_function(coordinates_x[0], coordinates_y[0], option=2)
-                    elif hotkey_data['Option'] == 'With Crosshair':
-                        cur_x, cur_y = win32gui.ScreenToClient(Addresses.game, win32api.GetCursorPos())
-                        mouse_function(cur_x, cur_y, option=2)
-            QThread.msleep(int(random.uniform(10, 20)))
+                try:
+                    hotkey_str = hotkey_data.get('Hotkey', '')
+                    interval = float(hotkey_data.get('Interval', 5.0))
+                    x = hotkey_data.get('X', 0)
+                    y = hotkey_data.get('Y', 0)
+
+                    # Sprawdz czy minql interwal
+                    last = self.last_times.get(i, 0)
+                    if now - last < interval:
+                        continue
+
+                    self.last_times[i] = now
+
+                    # Wcisnij klawisz do okna gry (bez przejmowania myszki)
+                    vk_code = None
+                    if hotkey_str.upper().startswith('F') and hotkey_str[1:].isdigit():
+                        vk_code = 111 + int(hotkey_str[1:])
+                    elif hotkey_str.isdigit():
+                        vk_code = ord(hotkey_str)
+                    elif len(hotkey_str) == 1 and hotkey_str.isalpha():
+                        vk_code = ord(hotkey_str.upper())
+                    elif hotkey_str == '*':
+                        vk_code = 0x6A
+
+                    if vk_code:
+                        win32gui.PostMessage(Addresses.game, win32con.WM_KEYDOWN, vk_code, 0x00010001)
+                        win32gui.PostMessage(Addresses.game, win32con.WM_KEYUP,   vk_code, 0xC0010001)
+
+                    # Kliknij na koordynaty (PostMessage - bez ruszania myszka!)
+                    if x and y:
+                        lp = win32api.MAKELONG(x, y)
+                        win32gui.PostMessage(Addresses.game, win32con.WM_MOUSEMOVE,   0, lp)
+                        win32gui.PostMessage(Addresses.game, win32con.WM_LBUTTONDOWN, 1, lp)
+                        win32gui.PostMessage(Addresses.game, win32con.WM_LBUTTONUP,   0, lp)
+
+                except Exception:
+                    pass
+            QThread.msleep(50)
 
     def stop(self):
         self.running = False

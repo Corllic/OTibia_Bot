@@ -54,31 +54,62 @@ def merge_close_points(points, distance_threshold):
 
 class WindowCapture:
     def __init__(self, w, h, x, y):
-        window_name = Addresses.game_name
-        self.hwnd = win32gui.FindWindow(None, window_name)
+        self.hwnd = Addresses.game  # uzyj bezposrednio HWND zamiast szukac po tytule
         self.w = w
         self.h = h
         self.x = x
         self.y = y
 
     def get_screenshot(self):
-        wDC = win32gui.GetWindowDC(self.hwnd)
-        dc_obj = win32ui.CreateDCFromHandle(wDC)
-        cDC = dc_obj.CreateCompatibleDC()
-        data_bitmap = win32ui.CreateBitmap()
-        data_bitmap.CreateCompatibleBitmap(dc_obj, self.w, self.h)
-        cDC.SelectObject(data_bitmap)
-        cDC.BitBlt((0, 0), (self.w, self.h), dc_obj, (self.x, self.y), win32con.SRCCOPY)
-        signed_ints_array = data_bitmap.GetBitmapBits(True)
-        img = np.frombuffer(signed_ints_array, dtype='uint8')
-        img.shape = (self.h, self.w, 4)
-        dc_obj.DeleteDC()
-        cDC.DeleteDC()
-        win32gui.ReleaseDC(self.hwnd, wDC)
-        win32gui.DeleteObject(data_bitmap.GetHandle())
-        img = img[..., :3]
-        img = np.ascontiguousarray(img)
-        return img
+        try:
+            import ctypes
+            hwnd = self.hwnd
+            if not hwnd:
+                return None
+
+            # Uzyj PrintWindow z PW_RENDERFULLCONTENT (działa z OpenGL/DX)
+            wDC = win32gui.GetWindowDC(hwnd)
+            dc_obj = win32ui.CreateDCFromHandle(wDC)
+            cDC = dc_obj.CreateCompatibleDC()
+            data_bitmap = win32ui.CreateBitmap()
+            # Pobierz caly rozmiar okna
+            rect = win32gui.GetWindowRect(hwnd)
+            full_w = rect[2] - rect[0]
+            full_h = rect[3] - rect[1]
+            if full_w <= 0 or full_h <= 0:
+                dc_obj.DeleteDC(); cDC.DeleteDC()
+                win32gui.ReleaseDC(hwnd, wDC); return None
+
+            data_bitmap.CreateCompatibleBitmap(dc_obj, full_w, full_h)
+            cDC.SelectObject(data_bitmap)
+
+            # PrintWindow z PW_RENDERFULLCONTENT = 0x2 przechwytuje OpenGL
+            PW_RENDERFULLCONTENT = 0x00000002
+            result = ctypes.windll.user32.PrintWindow(hwnd, cDC.GetSafeHdc(), PW_RENDERFULLCONTENT)
+
+            signed_ints_array = data_bitmap.GetBitmapBits(True)
+            img = np.frombuffer(signed_ints_array, dtype='uint8')
+            img.shape = (full_h, full_w, 4)
+
+            dc_obj.DeleteDC()
+            cDC.DeleteDC()
+            win32gui.ReleaseDC(hwnd, wDC)
+            win32gui.DeleteObject(data_bitmap.GetHandle())
+
+            img = img[..., :3]
+            img = np.ascontiguousarray(img)
+
+            # Przytnij do zadanego obszaru
+            y1 = min(self.y, full_h)
+            y2 = min(self.y + self.h, full_h)
+            x1 = min(self.x, full_w)
+            x2 = min(self.x + self.w, full_w)
+            if y2 <= y1 or x2 <= x1:
+                return img
+            return img[y1:y2, x1:x2]
+
+        except Exception as e:
+            return None
 
 
 def delete_item(list_widget, item) -> None:

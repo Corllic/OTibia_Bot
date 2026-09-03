@@ -195,6 +195,11 @@ def press_key(key) -> None:
 
 
 def press_hotkey(hotkey) -> None:
+    # hotkey == 0 oznacza klawisz * (Numpad Multiply) - uzyj useOrderItem przez VK_MULTIPLY
+    if hotkey == 0:
+        win32gui.PostMessage(Addresses.game, win32con.WM_KEYDOWN, 0x6A, 0x004E0001)
+        win32gui.PostMessage(Addresses.game, win32con.WM_KEYUP, 0x6A, 0x004E0001)
+        return
     hotkey_index = (((0x003A0001 >> 16) + hotkey) << 16) + 1
     win32gui.PostMessage(Addresses.game, win32con.WM_KEYDOWN, 0x6F + hotkey, hotkey_index)
     win32gui.PostMessage(Addresses.game, win32con.WM_KEYUP, 0x6F + hotkey, hotkey_index)

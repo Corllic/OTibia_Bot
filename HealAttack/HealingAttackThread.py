@@ -27,29 +27,49 @@ class HealThread(QThread):
     def run(self):
         while self.running:
             try:
+                # Sprawdź czy adresy są skonfigurowane
+                if Addresses.my_stats_address is None:
+                    QThread.msleep(500)
+                    continue
+
                 for heal_data in self.healing_data:
-                    if not self.running: break
+                    if not self.running:
+                        break
                     heal_type, heal_option, heal_below, heal_above, heal_min_mp = read_heal_data(heal_data)
-                    current_hp, current_max_hp, current_mp, current_max_mp = read_my_stats()
+                    stats = read_my_stats()
+                    if stats is None or any(v is None or v == 0 for v in stats[:2]):
+                        QThread.msleep(200)
+                        continue
+                    current_hp, current_max_hp, current_mp, current_max_mp = stats
+
+                    # Zabezpieczenie przed dzieleniem przez zero
+                    if current_max_hp <= 0 or current_max_mp <= 0:
+                        QThread.msleep(200)
+                        continue
+
                     hp_percentage = (current_hp * 100) / current_max_hp
                     mp_percentage = (current_mp * 100) / current_max_mp
+
                     if heal_type.startswith("HP"):
                         if heal_option == "Health":
                             if heal_below >= hp_percentage >= heal_above:
-                                mouse_function(coordinates_x[5], coordinates_y[5], Addresses.coordinates_x[0], Addresses.coordinates_y[0], option=5)
+                                mouse_function(coordinates_x[5], coordinates_y[5],
+                                               Addresses.coordinates_x[0], Addresses.coordinates_y[0], option=5)
                         else:
                             if heal_below >= hp_percentage >= heal_above and current_mp >= heal_min_mp:
                                 press_hotkey(int(heal_option[1:]))
                     elif heal_type.startswith("MP"):
                         if heal_below >= mp_percentage >= heal_above and current_hp >= heal_min_mp:
                             if heal_option == "Mana":
-                                mouse_function(coordinates_x[11], coordinates_y[11], Addresses.coordinates_x[0], Addresses.coordinates_y[0], option=5)
+                                mouse_function(coordinates_x[11], coordinates_y[11],
+                                               Addresses.coordinates_x[0], Addresses.coordinates_y[0], option=5)
                             else:
                                 press_hotkey(int(heal_option[1:]))
                     QThread.msleep(random.randint(10, 20))
                 QThread.msleep(random.randint(10, 20))
             except Exception as e:
-                print("Exception: ", e)
+                print("HealThread Exception: ", e)
+                QThread.msleep(100)
 
     def stop(self):
         self.running = False

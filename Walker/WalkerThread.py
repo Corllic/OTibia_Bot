@@ -22,12 +22,23 @@ class WalkerThread(QThread):
     def run(self):
         if not self.waypoints:
             return
+        # Guard: czekaj na załadowanie adresów
+        import Addresses as _Addr
+        timeout = 0
+        while _Addr.my_x_address is None and timeout < 30:
+            from PyQt5.QtCore import QThread as _QT
+            _QT.msleep(500)
+            timeout += 1
+        if _Addr.my_x_address is None:
+            print("Walker: brak adresów X/Y/Z - skonfiguruj Save/Settings/addresses.json")
+            return
+
         current_wpt = self.find_wpt(self.waypoints)
         timer = 0
         second_timer = 0
         self.discovered_obstacles = set()
         self.last_target_pos = None
-        my_x, my_y, my_z = read_my_wpt()
+        my_x, my_y, my_z = read_my_wpt() or (0, 0, 0)
         previous_pos = (my_x, my_y, my_z)
         while self.running:
             try:

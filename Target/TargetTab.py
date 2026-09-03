@@ -39,6 +39,7 @@ class TargetTab(QWidget):
         self.stance_comboBox = QComboBox(self)
         self.stance_comboBox.addItems(["Do Nothing", "Chase", "Diagonal", "Chase-Diagonal"])
         self.attackKey_comboBox = QComboBox(self)
+        self.attackKey_comboBox.addItem("* (PokeAvalar)")
         self.attackKey_comboBox.addItems(f'F{i}' for i in range(1, 13))
         self.attackKey_comboBox.addItem("OCR Battle List")
         self.skin_comboBox = QComboBox(self)
@@ -185,7 +186,14 @@ class TargetTab(QWidget):
         try:
             with open(filename, "r") as f:
                 loaded_data = json.load(f)
-            for target_data in loaded_data.get("targets", []):
+
+            # Obsługa obu formatów: lista (stary) i słownik z "targets" (nowy)
+            if isinstance(loaded_data, list):
+                targets_list = loaded_data
+            else:
+                targets_list = loaded_data.get("targets", [])
+
+            for target_data in targets_list:
                 # Backward compatibility: add Skin field if missing
                 if 'Skin' not in target_data:
                     target_data['Skin'] = 0
@@ -215,7 +223,7 @@ class TargetTab(QWidget):
             if blacklist is None:
                 blacklist = set()
             
-            self.target_thread = TargetThread(targets, Qt.Unchecked, self.attackKey_comboBox.currentIndex(), loot_data, blacklist)
+            self.target_thread = TargetThread(targets, Qt.Unchecked, self.attackKey_comboBox.currentIndex() - 1, loot_data, blacklist)
             self.target_thread.start()
         else:
             if self.target_thread:

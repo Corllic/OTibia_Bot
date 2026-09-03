@@ -4,7 +4,7 @@ import win32api
 import win32gui
 import Addresses
 import win32con
-from PyQt5.QtCore import QThread, Qt
+from PyQt5.QtCore import QThread, Qt, QMutex, QMutexLocker
 from PyQt5.QtWidgets import QCheckBox, QLineEdit, QComboBox
 
 class HotkeysThread(QThread):
@@ -53,6 +53,16 @@ class HotkeysThread(QThread):
                     if current_time - last_time >= self.next_delays[index]:
                         # Execute Hotkey
                         self.press_hotkey(hotkey_name)
+
+                        # Kliknij na koordynaty jesli ustawione (PostMessage - bez ruszania mysza)
+                        click_x = entry.get("ClickX")
+                        click_y = entry.get("ClickY")
+                        if click_x is not None and click_y is not None:
+                            import win32api as _w32a
+                            lp = _w32a.MAKELONG(click_x, click_y)
+                            win32gui.PostMessage(Addresses.game, win32con.WM_MOUSEMOVE,   0, lp)
+                            win32gui.PostMessage(Addresses.game, win32con.WM_LBUTTONDOWN, 1, lp)
+                            win32gui.PostMessage(Addresses.game, win32con.WM_LBUTTONUP,   0, lp)
                         
                         # Update time and calculate next delay
                         self.last_execution_times[index] = current_time
@@ -64,16 +74,31 @@ class HotkeysThread(QThread):
 
 
     def press_hotkey(self, hotkey_name):
-        # Map F1-F12 to VK codes
-        # F1 is 0x70 (112)
         try:
-            f_key_num = int(hotkey_name[1:])
-            vk_code = 111 + f_key_num # F1=112, so 111+1
-            
-            # Use keybd_event for key simulation
-            win32gui.PostMessage(Addresses.game, win32con.WM_KEYDOWN, vk_code, vk_code)
-            win32gui.PostMessage(Addresses.game, win32con.WM_KEYUP, vk_code, vk_code)
-            
+            vk_code = None
+
+            # F1-F12
+            if hotkey_name.upper().startswith('F') and hotkey_name[1:].isdigit():
+                vk_code = 111 + int(hotkey_name[1:])
+            # Cyfry 0-9
+            elif hotkey_name.isdigit():
+                vk_code = ord(hotkey_name)
+            # Pojedyncza litera A-Z
+            elif len(hotkey_name) == 1 and hotkey_name.isalpha():
+                vk_code = ord(hotkey_name.upper())
+            # Spacja
+            elif hotkey_name.lower() == 'space':
+                vk_code = 0x20
+            # Numpad *
+            elif hotkey_name == '*':
+                vk_code = 0x6A
+            else:
+                print(f"Nieznany klawisz: {hotkey_name}")
+                return
+
+            win32gui.PostMessage(Addresses.game, win32con.WM_KEYDOWN, vk_code, 0x00010001)
+            win32gui.PostMessage(Addresses.game, win32con.WM_KEYUP,   vk_code, 0xC0010001)
+
         except Exception as e:
             print(f"Error pressing hotkey {hotkey_name}: {e}")
 
